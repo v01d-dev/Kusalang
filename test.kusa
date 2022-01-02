@@ -1,0 +1,26 @@
+import System.IO;
+noinst type Program {
+    noinst member some : bool = true;
+    noinst property prop:string {
+        getter {
+            return 'hello';
+        }
+    }
+    pub noinst fun Main(a: int = 1, b: int = 2) {
+        Console.WriteLine('a');
+        Console.WriteLine(a);
+        Console.WriteLine(0.1);
+        Console.WriteLine(1.0);
+        Console.WriteLine(0xff);
+        Console.WriteLine(true);
+        let a : int = 1;
+        let test: double = 0.1;
+        let test1: float = 0.1f;
+        test1 = 0.3f;
+        let array: int[] = new int[];
+        array[1] = 1;
+    }
+    noinst fun test() int {
+        return 0;
+    }
+}

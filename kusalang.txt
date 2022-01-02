@@ -1,0 +1,170 @@
+Ast = body:Statement* {
+	return { type: 'Ast', body };
+}
+
+// Statement
+Statement = _ value:(Mofifier / Declaration / ImportStatement) _ {
+	return value;
+}
+Mofifier = values:(('pub' / 'noinst' / 'virtual' / 'protect') _r)+ target:Statement {
+	let result = target;
+    result.modifiers = values.map(value => value[0]);
+    return target;
+}
+ImportStatement = 'import' _r target:StaticAccess _ ';' {
+	return { type: 'ImportStatement', target };
+}
+Declaration = FunctionDeclaration / TypeDeclaration / MemberDeclaration / PropertyDeclaration
+FunctionDeclaration = 'fun' _r funcName:Identifier _ '(' argList: FunctionArgumentsList ')'
+	returnType:(_r StaticAccess)? _ body:CodeBlock _ {
+	return { type: 'FunctionDeclaration', functionName: funcName, body, argList,
+		returnType: returnType ? returnType[1] : null};
+}
+FunctionArgumentsList = values:(_ VariableDeclarator _ ','?)* {
+	return values.map(value => value[1]);
+}
+TypeDeclaration = 'type' _r typeName:Identifier _ body:BasicBlock _ {
+	return { type: 'TypeDeclaration', typeName, body };
+}
+VariableDeclaration = 'let' _r decl:VariableDeclarator {
+    return { type: 'VariableDeclaration', declarator: decl };
+}
+VariableDeclarator = varName:Identifier _ ':' _ varType:StaticAccess defaultValue:(_ '=' _ Expression)? {
+	return { type: 'VariableDeclarator',
+    	varName, varType,
+      	defaultValue: defaultValue ? defaultValue[3] : null
+    };
+}
+MemberDeclaration = 'member' _r decl:VariableDeclarator _ ';' {
+    return { type: 'MemberDeclaration', declarator: decl };
+}
+PropertyDeclaration = 'property' _r decl:VariableDeclarator _ content:PropertyContent {
+	return { type: 'PropertyDeclaration', declarator: decl, content };
+}
+
+CodeStatement = value:(WhileStatement / IfStatement) {
+	return value;
+} / value:((VariableDeclaration / ReturnStatement / Expression / Block) _ ';') {
+	return value[0];
+}
+
+ReturnStatement = 'return' value:(_r Expression)? {
+    return { type: 'ReturnStatement', value: value ? value[1] : null };
+}
+IfStatement = 'if' condition:((_r Expression) / WrapExpression) _ then:CodeBlock elseThen:(_ 'else' _ (CodeBlock / IfStatement))? {
+	return {
+    	type: 'IfStatement',
+    	condition: (condition.length ? condition[1] : condition),
+        then, 
+        elseThen: elseThen ? elseThen[3] : null
+    };
+}
+WhileStatement = 'while' condition:((_r Expression) / WrapExpression) _ body:CodeBlock {
+	return { type: 'WhileStatement',
+    condition: (condition.length ? condition[1] : condition),
+    body };
+}
+
+// Blocks
+Block = CodeBlock
+BasicBlock = '{' _ values:(_ Statement _)* _ '}' {
+	return { type: 'Block', blockType: 'basic', value: values.map(value => value[1]) };
+}
+CodeBlock = '{' _ values:(_ CodeStatement _)* _ '}' {
+	return { type: 'Block', blockType: 'code', value: values.map(value => value[1]) };
+}
+PropertyItem = key:('getter' / 'setter') _ value:CodeBlock {
+	return { key, value };
+}
+PropertyContent = '{' _ values:(_ PropertyItem _)* _ '}' {
+	let result = {};
+    values.map(value => value[1]).forEach(value => {
+    	result[value.key] = value.value;
+    });
+    return result;
+}
+
+// Expression
+StaticAccess = ArrayStaticAccess / PathStaticAccess
+ArrayStaticAccess = target:PathStaticAccess _ '[]' {
+    return { type: 'ArrayStaticAccess', target };
+}
+PathStaticAccess = curr:Identifier next:('.' PathStaticAccess)? {
+    return next ? { type: 'StaticAccess', curr, next: next[1]} : { type: 'StaticAccess', curr};
+}
+Expression = value:PrimaryExpression access:ExpressionAccess {
+	return access? { type: 'ExpressionAccess', left: value, right: access} : value;
+}
+WriteableExpression = ArrayAccessExpression / Identifier
+PrimaryExpression = Comparison
+Value = WrapExpression / Call / ObjectCreateExpression / BooleanLiteral / Assignment / ArrayAccessExpression / Identifier / StringLiteral / NumberLiteral
+ObjectCreateExpression = 'new' _r target:(Call / StaticAccess) {
+	return { type:'ObjectCreateExpression', target };
+}
+Assignment = dest:WriteableExpression _ '=' _ src:Expression {
+    return { type: 'Assignment', dest, src};
+}
+WrapExpression = '(' value:Expression ')' {
+	return value;
+}
+ArrayAccessExpression = src:Identifier _ '[' _ index:Value _ ']' {
+	return { type: 'ArrayAccessExpression', src, index };
+}
+ExpressionAccess = value:('.' Expression)? {
+	return value ? value[1] : null;
+}
+
+Call = callee:Identifier _ arglist:CallArgumentsList {
+	return { type: 'Call', args: arglist, callee };
+}
+CallArgumentsList = '(' values:(_ Expression _ ','?)* ')' {
+   	return values.map(value => value[1]);
+}
+Identifier
+	= value:[a-zA-Z_][a-zA-Z0-9_]* { return { type: 'Identifier', value: text() } }
+
+// Maths
+Comparison = left:Sum data:(_ symbol:('>=' / '==' / '<=') _ right:Sum)? {
+	if(!data) return left;
+    return { type: 'InfixExpression', left, operator: data[1], right: data[3] };
+}
+Sum = left:Product data:(_ symbol:('+' / '-') _ right:Product)* {
+	if(!data.length) return left;
+    return data.reduce((total, curr) => {
+    	if (total == null) {
+        	return { type: 'InfixExpression', left, operator: curr[1], right: curr[3] };
+        }
+        return { type: 'InfixExpression', left: total, operator: curr[1], right: curr[3] };
+    }, null);
+}
+Product = left:Value data:(_ symbol:('*' / '/' / '%') _ right:Value)* {
+	if(!data.length) return left;
+    return data.reduce((total, curr) => {
+    	if (total == null) {
+        	return { type: 'InfixExpression', left, operator: curr[1], right: curr[3] };
+        }
+        return { type: 'InfixExpression', left: total, operator: curr[1], right: curr[3] };
+    }, null);
+}
+
+// Literals
+BooleanLiteral = value:('true' / 'false') {
+	return { type: 'BooleanLiteral', value: value };
+}
+StringLiteral = '\'' value:RawChar* '\'' {
+	return { type: 'StringLiteral', value: value.join('') };
+}
+RawChar = CharEscape / [^\\'\n]
+CharEscape = '\\n' / '\\r' / '\\t' / '\\x' [0-9a-fA-F]{2} / '\\\''
+
+NumberLiteral = SingleNumberLiteral / IntNumberLiteral
+IntNumberLiteral = value:('0x' [0-9a-fA-F]+ / '0b' [01]+ / ('+' / '-')?[0-9]+) {
+	return { type: 'NumberLiteral', value: text() };
+}
+SingleNumberLiteral = IntNumberLiteral? '.' IntNumberLiteral 'f'?  {
+	return { type: 'NumberLiteral', value: text() };
+}
+
+_ "whitespace"
+	= [ \t\n\r]*
+_r = [ \t\n\r]
